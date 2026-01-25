@@ -2,6 +2,8 @@ import { HttpStatus, Injectable } from '@nestjs/common';
 import { CreateOrderDto } from './dto/create-order.dto';
 import { PrismaService } from 'src/prisma.service';
 import { RpcException } from '@nestjs/microservices';
+import { OrderPaginationDto } from './dto/order-pagination.dto';
+import { ChangeOrderStatusDto } from './dto';
 @Injectable()
 export class OrdersService {
   constructor(private readonly prismaService: PrismaService) {}
@@ -12,9 +14,23 @@ export class OrdersService {
     return order;
   }
 
-  async findAll() {
-    const orders = await this.prismaService.order.findMany();
-    return orders;
+  async findAll(orderPaginationDto: OrderPaginationDto) {
+    const totalPages = await this.prismaService.order.count({
+      where: { status: orderPaginationDto.status },
+    });
+    const currentPage = orderPaginationDto.page || 1;
+    const limit = orderPaginationDto.limit || 10;
+
+    return {
+      data: await this.prismaService.order.findMany({
+        where: { status: orderPaginationDto.status },
+        skip: (currentPage - 1) * limit,
+        take: limit,
+      }),
+      total: totalPages,
+      page: currentPage,
+      lastPage: Math.ceil(totalPages / limit),
+    };
   }
 
   async findOne(id: string) {
@@ -28,5 +44,18 @@ export class OrdersService {
       });
     }
     return order;
+  }
+  async changeOrderStatus(changeOrderStatusDto: ChangeOrderStatusDto) {
+    const { id, status } = changeOrderStatusDto;
+    console.log('Changing status for order id:', id, 'to status:', status);
+    const order = await this.findOne(id);
+    if (order.status == status) {
+      return order;
+    }
+    const updatedOrder = await this.prismaService.order.update({
+      where: { id: order.id },
+      data: { status },
+    });
+    return updatedOrder;
   }
 }
