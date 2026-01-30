@@ -1,17 +1,92 @@
-import { HttpStatus, Injectable } from '@nestjs/common';
+import { HttpStatus, Inject, Injectable } from '@nestjs/common';
 import { CreateOrderDto } from './dto/create-order.dto';
 import { PrismaService } from 'src/prisma.service';
-import { RpcException } from '@nestjs/microservices';
+import { ClientProxy, RpcException } from '@nestjs/microservices';
 import { OrderPaginationDto } from './dto/order-pagination.dto';
 import { ChangeOrderStatusDto } from './dto';
+import { PRODUCT_SERVICE } from 'src/config';
+import { firstValueFrom } from 'rxjs';
+
+type ProductValidationResult = {
+  id: number;
+  price: number;
+  name: string;
+};
 @Injectable()
 export class OrdersService {
-  constructor(private readonly prismaService: PrismaService) {}
+  constructor(
+    private readonly prismaService: PrismaService,
+    @Inject(PRODUCT_SERVICE) private readonly productClient: ClientProxy,
+  ) {}
   async create(createOrderDto: CreateOrderDto) {
-    const order = await this.prismaService.order.create({
-      data: createOrderDto,
-    });
-    return order;
+    try {
+      // Validate products via microservice
+      const productIds: number[] = createOrderDto.items.map(
+        (item) => item.productId,
+      );
+      // Send product IDs to product microservice for validation
+      const products = await firstValueFrom<ProductValidationResult[]>(
+        this.productClient.send({ cmd: 'validate_products' }, productIds),
+      );
+      console.log('Validated products:', products);
+      //Calculate total amount and total items
+      const totalAmount = createOrderDto.items.reduce((sum, orderItem) => {
+        const item = products.find(
+          (product) => product.id === orderItem.productId,
+        );
+        const price = item ? item.price : 0;
+        return sum + price * orderItem.quantity;
+      }, 0);
+      console.log('Total amount calculated:', totalAmount);
+      //Calculate total items
+      const totalItems = createOrderDto.items.reduce(
+        (sum, orderItem) => sum + orderItem.quantity,
+        0,
+      );
+      console.log('Total items calculated:', totalItems);
+      const order = await this.prismaService.order.create({
+        data: {
+          totalAmount: totalAmount,
+          totalItems: totalItems,
+          OrderItem: {
+            createMany: {
+              data: createOrderDto.items.map((orderItem) => ({
+                price:
+                  products.find((product) => product.id === orderItem.productId)
+                    ?.price || 0,
+                productId: orderItem.productId,
+                quantity: orderItem.quantity,
+              })),
+            },
+          },
+        },
+        include: {
+          OrderItem: {
+            select: {
+              price: true,
+              productId: true,
+              quantity: true,
+            },
+          },
+        },
+      });
+      console.log('Order created with ID:', order.id);
+      return {
+        ...order,
+
+        OrderItem: order.OrderItem.map((orderItem) => ({
+          ...orderItem,
+          name:
+            products.find((product) => product.id === orderItem.productId)
+              ?.name || '',
+        })),
+      };
+    } catch {
+      throw new RpcException({
+        message: 'Could not validate products',
+        status: HttpStatus.BAD_REQUEST,
+      });
+    }
   }
 
   async findAll(orderPaginationDto: OrderPaginationDto) {
