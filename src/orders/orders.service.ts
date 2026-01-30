@@ -111,6 +111,15 @@ export class OrdersService {
   async findOne(id: string) {
     const order = await this.prismaService.order.findUnique({
       where: { id },
+      include: {
+        OrderItem: {
+          select: {
+            price: true,
+            productId: true,
+            quantity: true,
+          },
+        },
+      },
     });
     if (!order) {
       throw new RpcException({
@@ -118,7 +127,23 @@ export class OrdersService {
         status: HttpStatus.NOT_FOUND,
       });
     }
-    return order;
+
+    const productIds = order.OrderItem.map((item) => item.productId);
+    // Send product IDs to product microservice for validation
+    const products = await firstValueFrom<ProductValidationResult[]>(
+      this.productClient.send({ cmd: 'validate_products' }, productIds),
+    );
+
+    return {
+      ...order,
+
+      OrderItem: order.OrderItem.map((orderItem) => ({
+        ...orderItem,
+        name:
+          products.find((product) => product.id === orderItem.productId)
+            ?.name || '',
+      })),
+    };
   }
   async changeOrderStatus(changeOrderStatusDto: ChangeOrderStatusDto) {
     const { id, status } = changeOrderStatusDto;
