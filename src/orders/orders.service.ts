@@ -4,7 +4,7 @@ import { PrismaService } from 'src/prisma.service';
 import { ClientProxy, RpcException } from '@nestjs/microservices';
 import { OrderPaginationDto } from './dto/order-pagination.dto';
 import { ChangeOrderStatusDto } from './dto';
-import { PRODUCT_SERVICE } from 'src/config';
+import { NATS_SERVICE } from 'src/config';
 import { firstValueFrom } from 'rxjs';
 
 type ProductValidationResult = {
@@ -16,7 +16,7 @@ type ProductValidationResult = {
 export class OrdersService {
   constructor(
     private readonly prismaService: PrismaService,
-    @Inject(PRODUCT_SERVICE) private readonly productClient: ClientProxy,
+    @Inject(NATS_SERVICE) private readonly productClient: ClientProxy,
   ) {}
   async create(createOrderDto: CreateOrderDto) {
     try {
