@@ -28,7 +28,6 @@ export class OrdersService {
       const products = await firstValueFrom<ProductValidationResult[]>(
         this.productClient.send({ cmd: 'validate_products' }, productIds),
       );
-      console.log('Validated products:', products);
       //Calculate total amount and total items
       const totalAmount = createOrderDto.items.reduce((sum, orderItem) => {
         const item = products.find(
@@ -37,13 +36,11 @@ export class OrdersService {
         const price = item ? item.price : 0;
         return sum + price * orderItem.quantity;
       }, 0);
-      console.log('Total amount calculated:', totalAmount);
       //Calculate total items
       const totalItems = createOrderDto.items.reduce(
         (sum, orderItem) => sum + orderItem.quantity,
         0,
       );
-      console.log('Total items calculated:', totalItems);
       const order = await this.prismaService.order.create({
         data: {
           totalAmount: totalAmount,
@@ -70,7 +67,6 @@ export class OrdersService {
           },
         },
       });
-      console.log('Order created with ID:', order.id);
       return {
         ...order,
 
@@ -147,7 +143,6 @@ export class OrdersService {
   }
   async changeOrderStatus(changeOrderStatusDto: ChangeOrderStatusDto) {
     const { id, status } = changeOrderStatusDto;
-    console.log('Changing status for order id:', id, 'to status:', status);
     const order = await this.findOne(id);
     if (order.status == status) {
       return order;
